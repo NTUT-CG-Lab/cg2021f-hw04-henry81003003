@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - loaders - MMD loader</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #fff;
+				color: #444;
+			}
+			a {
+				color: #08f;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="info">
+		</div>
+
+		<script src="./js/libs/ammo.wasm.js"></script>
+		<script src="scoreoutputer.min.js"></script>
+	<script>
+		// 建構子 ScoreOutputer 接受一個字串，該字串為 csv 的檔案名稱
+		// 以下面範例，檔名就為 "109598018(總分: 6).csv"
+		var so = new ScoreOutputer("109598018");
+		so.installCSS(function () {
+			// 安裝 bootstrap 的 css，如果在 html 上方引用 bootstrap 5.1.1 的話就不用使用 installCSS ，注意一定要 bootstrap css 5.1.1 版
+			// installCSS 接收一個 callback 當作參數，作為成功安裝 bootstrap css 的回呼函式
+
+			//加入項目，分數，完成狀況
+			//第一個參數為 項目名稱
+			//第2個參數為 項目分數
+			//第3個參數為 完成狀況，有完成 true/未完成 false
+			//有幾個項目就呼叫幾個 addChild
+			//addChild 要比 renderModal 先呼叫
+			so.addChild("建立標準GUI", 2, true);
+			so.addChild("回答問題", 2, true);
+			so.addChild("當GUI的數值改變時，須將數值記錄起來", 2, true);
+			so.addChild("可使用按鍵P顯示目前紀錄的值", 1, true);
+			so.addChild("紀錄的數值儲存為JSON檔", 2, true);
+			so.addChild("可按鍵選擇上 / 下一隻角色，角色morph也要改變", 1, true);
+
+			//產生自評表，參數如下所示
+			so.renderModal(
+				//1. 自評表插入位置 (預設 document.body)
+				document.body,
+				//2. 自評表背景 (預設紅色)
+				'rgba(100,45,58,1)',
+				//3. 自評表文字顏色 (預設白色)
+				'white',
+				//4. 自評表文字大小 (預設 14pt)
+				'15pt',
+				//5. 自評表 checkbox 文字大小 (預設多少忘了)
+				'15px',
+				//6. 自評表標題 (預設 "自我評分表")
+				dialogTitle = "自我評分表"
+			);
+
+			//設定下載按鈕 <-- 一定要呼叫這個函數，不然沒有下載功能
+			so.installDownloadBtn();
+
+			//產生 "開啟自評表按鈕"
+			so.renderBtn(
+				//自評表按鈕插入位置
+				document.querySelector("#info"),
+				//自評表按鈕文字
+				"開啟自評表"
+			);
+		});
+	</script>
+		<script type="module">
+
+			import * as THREE from './build/three.module.js';
+
+			import { GUI } from './jsm/libs/dat.gui.module.js';
+			import { OrbitControls } from './jsm/controls/OrbitControls.js';
+			import { OutlineEffect } from './jsm/effects/OutlineEffect.js';
+			import { MMDLoader } from './jsm/loaders/MMDLoader.js';
+			import { MMDAnimationHelper } from './jsm/animation/MMDAnimationHelper.js';
+
+			let camera, scene, renderer, effect;
+			let mesh, helper;
+
+			const vpdFiles = [
+				'models/mmd/vpds/01.vpd',
+				'models/mmd/vpds/02.vpd',
+				'models/mmd/vpds/03.vpd',
+				'models/mmd/vpds/04.vpd',
+				'models/mmd/vpds/05.vpd',
+				'models/mmd/vpds/06.vpd',
+				'models/mmd/vpds/07.vpd',
+				'models/mmd/vpds/08.vpd',
+				//'models/mmd/vpds/09.vpd',
+				//'models/mmd/vpds/10.vpd',
+				'models/mmd/vpds/11.vpd'
+			];
+
+			const gui = new GUI();
+			const gui2 = new GUI();
+
+			var  textarray = ['eyebrow_troubled_left','eyebrow_troubled_right','eyebrow_angry_left','eyebrow_angry_right', 
+							  'eyebrow_serious_left','eyebrow_serious_right','eyebrow_happy_left','eyebrow_happy_right',
+							  'eyebrow_lowered_left','eyebrow_lowered_right','eyebrow_raised_left','eyebrow_raised_right',
+							  'eye_wink_left','eye_wink_right','eye_happy_wink_left','eye_happy_wink_right',
+							  'eye_relaxed_left','eye_relaxed_right','eye_unimpressed_left','eye_unimpressed_right',
+							  'eye_raised_lower_eyelid_left','eye_raised_lower_eyelid_right','eye_surprised_left','eye_surprised_right',
+							  'iris_small_left','iris_small_right','mouth_aaa','mouth_iii','mouth_uuu','mouth_eee','mouth_ooo','mouth_delta',
+							  'mouth_smirk','mouth_raised_corner_left','mouth_raised_corner_right','mouth_lowered_corner_left',
+							  'mouth_lowered_corner_right'];
+			
+			var standardlist = {eyebrow_troubled_left: 0, eyebrow_troubled_right:0,eyebrow_angry_left:0,eyebrow_angry_right:0,
+								eyebrow_serious_left:0,eyebrow_serious_right:0,eyebrow_happy_left:0,eyebrow_happy_right:0,
+								eyebrow_lowered_left:0,eyebrow_lowered_right:0,eyebrow_raised_left:0,eyebrow_raised_right:0,
+								eye_wink_left:0,eye_wink_right:0,eye_happy_wink_left:0,eye_happy_wink_right:0,eye_relaxed_left:0,
+								eye_relaxed_right:0,eye_unimpressed_left:0,eye_unimpressed_right:0,eye_raised_lower_eyelid_left:0,
+								eye_raised_lower_eyelid_right:0,eye_surprised_left:0,eye_surprised_right:0,iris_small_left:0,
+								iris_small_right:0,mouth_aaa:0,mouth_iii:0,mouth_uuu:0,mouth_eee:0,mouth_ooo:0,mouth_delta:0,
+								mouth_smirk:0,mouth_raised_corner_left:0,mouth_raised_corner_right:0,mouth_lowered_corner_left:0,
+								mouth_lowered_corner_right:0};
+			
+			const vpds = [];
+
+			// MMD Loader Initializer
+			var MMD_id = 0;
+			var modelFile = ['models/mmd/KizunaAI_ver1.01/KizunaAI_ver1.01/kizunaai.pmx', 
+							 'models/mmd/るいのれ式物述有栖_配布用フォルダ/物述有栖.pmx',
+							 'models/mmd/『天宮こころ(Kokoro Amamiya)』/『天宮こころ(Kokoro Amamiya)』.pmx'];
+			helper = new MMDAnimationHelper();
+			const loader = new MMDLoader();
+			const poses = gui.addFolder( 'Poses' );
+			var morphs = gui.addFolder( 'Morphs' );
+			var stdlist = gui2.addFolder( 'stdlist' );
+			var dictionary;
+			var controls = {};
+
+			Ammo().then( function ( AmmoLib ) {
+				Ammo = AmmoLib;
+				init();
+				animate();
+			} );
+
+			function init() {
+
+				const container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+				camera.position.z = 30;
+
+				// scene
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				const ambient = new THREE.AmbientLight( 0x666666 );
+				scene.add( ambient );
+
+				const directionalLight = new THREE.DirectionalLight( 0x887766 );
+				directionalLight.position.set( - 1, 1, 1 ).normalize();
+				scene.add( directionalLight );
+
+				// renderer
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				effect = new OutlineEffect( renderer );
+
+				loader.load( modelFile[MMD_id], function ( object ) {
+					mesh = object;
+					mesh.position.y = - 10;
+					scene.add( mesh );
+					let vpdIndex = 0;
+					function loadVpd() {
+						const vpdFile = vpdFiles[ vpdIndex ];
+						loader.loadVPD( vpdFile, false, function ( vpd ) {
+							vpds.push( vpd );
+							vpdIndex ++;
+							if ( vpdIndex < vpdFiles.length ) {
+								loadVpd();
+							}
+							else {
+								initGui();
+							}
+						}, onProgress, null );
+					}
+					loadVpd();
+				}, onProgress, null );
+				
+				//鏡頭控制
+				const cameracontrols = new OrbitControls(camera, renderer.domElement);
+				cameracontrols.minDistance = 10;
+				cameracontrols.maxDistance = 100;
+				cameracontrols.enableRotate = false;
+
+				window.addEventListener( 'resize', onWindowResize );
+				window.addEventListener( 'keydown', KeyPress, false );
+
+				// GUI1 initialization
+				function initGui() {
+					dictionary = mesh.morphTargetDictionary;
+					controls = {};
+					const keys = [];
+					const stdlist_keys=[];
+
+					function getBaseName( s ) {
+						return s.slice( s.lastIndexOf( '/' ) + 1 );
+					}
+
+					function initControls() {
+						for ( const key in dictionary ) {
+							controls[ key ] = 0.0;
+						}
+
+						controls.pose = - 1;
+
+						for ( let i = 0; i < vpdFiles.length; i ++ ) {
+							controls[ getBaseName( vpdFiles[ i ] ) ] = false;
+						}
+					}
+
+					function initStdListControls() {
+						for ( const key in standardlist ) {
+							controls[ key ] = -1.0;
+						}
+
+						controls.pose = -1;
+
+						for ( let i = 0; i < vpdFiles.length; i ++ ) {
+							controls[ getBaseName( vpdFiles[ i ] ) ] = false;
+						}
+
+						morphToStdList();
+					}
+
+					function initKeys() {
+						for ( const key in dictionary ) {
+							keys.push( key );
+						}
+					}
+
+					function initStdListKeys() {
+						for ( const key in standardlist ) {
+							stdlist_keys.push( key );
+						}
+					}
+
+					function initPoses() {
+						const files = { default: - 1 };
+						for ( let i = 0; i < vpdFiles.length; i ++ ) {
+							files[ getBaseName( vpdFiles[ i ] ) ] = i;
+						}
+						poses.add( controls, 'pose', files ).onChange( onChangePose );
+					}
+
+					function initMorphs() {
+						for ( const key in dictionary ) {
+							morphs.add( controls, key, 0.0, 1.0, 0.01 ).onChange( onChangeMorph );
+						}
+					}
+					function initStdListMorphs() {
+						for ( const key in standardlist ) {
+							stdlist.add( controls, key, 0.0, 1.0, 0.01 ).onChange( onChangeStdList );
+						}
+					}
+
+					function onChangeMorph() {
+						for ( let i = 0; i < keys.length; i ++ ) {
+							const key = keys[ i ];
+							const value = controls[ key ];
+							mesh.morphTargetInfluences[ i ] = value;
+						}
+					}
+
+					// gui 數值改變做相應動作
+					function onChangeStdList () {
+						for(let i=0; i<stdlist_keys.length; i++) {
+							const key = stdlist_keys[i];
+							const value = controls[key];
+							standardlist[ stdlist_keys[i] ] = value;
+							// console.log("value", value);
+						}
+					}
+
+					function onChangePose() {
+						const index = parseInt( controls.pose );
+						if ( index === - 1 ) {
+							mesh.pose();
+						}
+						else {
+							helper.pose( mesh, vpds[ index ] );
+						}
+					}
+
+					// initGUI
+					initControls();
+					initKeys();
+					initPoses();
+					initMorphs();
+					onChangeMorph();
+					onChangePose();
+
+					// standardList
+					initStdListControls();
+					initStdListKeys();
+					initStdListMorphs();
+					onChangeStdList();
+
+					poses.open();
+					morphs.open();
+					stdlist.open();
+				}
+			}
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				effect.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			// Update GUI
+			function updateGUI() {
+				gui.removeFolder(morphs)
+				morphs = gui.addFolder( 'Morphs' );
+				gui2.removeFolder(stdlist)
+				stdlist = gui2.addFolder( 'stdlist' );
+			
+				dictionary = mesh.morphTargetDictionary;
+
+				controls = {};
+				const keys = [];
+				const stdlist_keys=[];
+
+				function getBaseName( s ) {
+					return s.slice( s.lastIndexOf( '/' ) + 1 );
+				}
+
+				function initGUIControls() {
+					for ( const key in dictionary ) {
+						controls[ key ] = 0.0;
+					}
+				}
+
+				function initMyGUIControls() {
+					for ( const key in standardlist ) {
+						controls[ key ] = 0.0;
+						morphToStdList();
+					}
+				}
+
+				function initKeys() {
+					for ( const key in dictionary ) {
+						keys.push( key );
+					}
+				}
+
+				function initStdlistKeys() {
+					for ( const key in standardlist ) {
+						stdlist_keys.push( key );
+					}
+				}
+
+				function initMorphs() {
+					for ( const key in dictionary ) {
+						morphs.add( controls, key, 0.0, 1.0, 0.01 ).onChange( onChangeMorph );
+					}
+				}
+
+				function initStdList() {
+					for ( const key in standardlist ) {
+						stdlist.add( controls, key, 0.0, 1.0, 0.01 ).onChange( onChangeStdList );
+					}
+				}
+
+				function onChangeStdList() {
+					for ( let i = 0; i < stdlist_keys.length; i ++ ) {
+						const key = stdlist_keys[ i ];
+						const value = controls[ key ];
+						standardlist[stdlist_keys[ i ]]=value;
+					}
+				}
+
+				function onChangeMorph() {
+					for ( let i = 0; i < keys.length; i ++ ) {
+						const key = keys[ i ];
+						const value = controls[ key ];
+						mesh.morphTargetInfluences[ i ] = value;
+					}
+				}
+
+				initStdlistKeys();
+				initGUIControls();
+				initMyGUIControls();
+				initKeys();
+			
+				initMorphs();
+				initStdList();
+
+				onChangeMorph();
+				onChangeStdList();
+
+				morphs.open();
+				stdlist.open();
+			}
+
+			// MMD reader
+			function read_MMD( MMD_id ) {
+				scene.remove(mesh);
+				loader.load(modelFile[MMD_id], function (object) {
+					mesh = object;
+					mesh.position.y = - 10;
+					scene.add(mesh);
+				}, onProgress, null);
+				updateGUI();
+			}
+
+			// progresser
+			function onProgress( xhr ) {
+				if ( xhr.lengthComputable ) {
+					const percentComplete = xhr.loaded / xhr.total * 100;
+					console.log( Math.round( percentComplete, 2 ) + '% downloaded' );
+				}
+			}
+			
+			// Key press
+			function KeyPress( event ) {
+				var filename;
+				switch( event.which ) {
+					// Press P : Print the morph values in console log
+					case 80:
+						// morphToStdList();
+						for ( const key in standardlist ) {
+							console.log( key + ':' + controls[key] );
+						}
+						break;
+					
+					// Press A : Change to the previous model
+					case 65:
+						scene.remove(mesh);
+						MMD_id = (MMD_id - 1 + modelFile.length) % modelFile.length;
+						read_MMD(MMD_id);
+						break;
+					
+					// Press D : Change to the next model
+					case 68:
+						scene.remove(mesh);
+						MMD_id = (MMD_id + 1) % modelFile.length;
+						read_MMD(MMD_id);
+						break;
+					// Press S : Save the Morph values to JSON file
+					case 83:
+						var guiContent = {}
+						var gui_index = 0;
+						for ( const key in standardlist ) {	
+							guiContent[gui_index] = controls[key];
+							gui_index += 1;
+						}
+						
+						var data = JSON.stringify({guiContent}, null, 4);
+						JSON_downloader(data, "application/octet-stream", "GUI_content_for_Model0" + String(MMD_id + 1) + ".json");
+						break;
+				}
+			}
+
+			function JSON_downloader(data, type, name) {
+				var blob = new Blob([data], {type});
+				var url = URL.createObjectURL(blob);
+				downloadURI(url, name);
+				URL.revokeObjectURL(url);
+			}
+			
+			function downloadURI(url, name) {
+				var link = document.createElement("a");
+				link.href = url;
+				link.download = name;
+				link.click();
+			}
+
+			// Inherit the value of the previous character --> the function here has the "BUG". Don't use it!!
+			function morphToStdList() {
+				for ( const key in dictionary ) {
+					switch ( key.toString() ){
+						case "笑い":
+							controls[ "eye_happy_wink_left" ] = controls[ "笑い" ];
+							controls[ "eye_happy_wink_right" ] = controls[ "笑い" ];
+							// standardlist[ "eye_happy_wink_left" ] = controls[ "笑い" ];
+							// standardlist[ "eye_happy_wink_right" ] = controls[ "笑い" ];
+							break;
+						case "まばたき":
+							controls[ "eye_wink_left" ] = controls[ "まばたき" ];
+							controls[ "eye_wink_right" ] = controls[ "まばたき" ];
+							// standardlist[ "eye_wink_left" ] = controls[ "まばたき" ];
+							// standardlist[ "eye_wink_right" ] = controls[ "まばたき" ];
+							break;
+						case "ウィンク":
+							controls[ "eye_happy_wink_left" ] = controls[ "ウィンク" ];
+							// standardlist[ "eye_happy_wink_left" ] = controls[ "ウィンク" ];
+							break;
+						case "ウィンク右":
+							controls[ "eye_happy_wink_right" ] = controls[ "ウィンク右" ];
+							// standardlist[ "eye_happy_wink_right" ] = controls[ "ウィンク右" ];
+							break;
+						case "ウィンク２":
+							controls[ "eye_wink_left" ] = controls[ "ウィンク２" ];
+							// standardlist[ "eye_wink_left" ] = controls[ "ウィンク２" ];
+							break;
+						case "ｳｨﾝｸ２右":
+							controls[ "eye_wink_right" ] = controls[ "ｳｨﾝｸ２右" ];
+							// standardlist[ "eye_wink_right" ] = controls[ "ｳｨﾝｸ２右" ];
+							break;
+						case "びっくり":
+							controls[ "eye_surprised_left" ] = controls[ "びっくり" ];
+							controls[ "eye_surprised_right" ] = controls[ "びっくり" ];
+							// standardlist[ "eye_surprised_left" ] = controls[ "びっくり" ];
+							// standardlist[ "eye_surprised_right" ] = controls[ "びっくり" ];
+							break;
+						// case "悲しい":
+							// controls[ "" ] = controls[ "" ];
+							// break;
+						case "じと目":
+							controls[ "eye_unimpressed_left" ] = controls[ "じと目" ];
+							controls[ "eye_unimpressed_right" ] = controls[ "じと目" ];
+							// standardlist[ "eye_unimpressed_left" ] = controls[ "じと目" ];
+							// standardlist[ "eye_unimpressed_right" ] = controls[ "じと目" ];
+							break;
+						case "あ":
+							controls[ "mouth_aaa" ] = controls[ "あ" ];
+							// standardlist[ "mouth_aaa" ] = controls[ "あ" ];
+							break;
+						case "い":
+							controls[ "mouth_iii" ] = controls[ "い" ];
+							// standardlist[ "mouth_iii" ] = controls[ "い" ];
+							break;
+						case "う":
+							controls[ "mouth_uuu" ] = controls[ "う" ];
+							// standardlist[ "mouth_uuu" ] = controls[ "う" ];
+							break;
+						case "え":
+							controls[ "mouth_eee" ] = controls[ "え" ];
+							// standardlist[ "mouth_eee" ] = controls[ "え" ];
+							break;
+						case "お":
+							controls[ "mouth_ooo" ] = controls[ "お" ];
+							// standardlist[ "mouth_ooo" ] = controls[ "お" ];
+							break;
+						// case "お-":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						// case "いー":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						// case "○":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						case "▲":
+							controls[ "mouth_delta" ] = controls[ "▲" ];
+							// standardlist[ "mouth_delta" ] = controls[ "▲" ];
+							break;
+						// case "にやり":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						case "口角下げ":
+							controls[ "mouth_lowered_corner_left" ] = controls[ "口角下げ" ];
+							controls[ "mouth_lowered_corner_right" ] = controls[ "口角下げ" ];
+							// standardlist[ "mouth_lowered_corner_left" ] = controls[ "口角下げ" ];
+							// standardlist[ "mouth_lowered_corner_right" ] = controls[ "口角下げ" ];
+							break;
+						// case "えー":
+						// 	controls[ "" ] = controls[ "" ];
+						// case "泣き":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						case "にこり":
+							controls[ "eyebrow_happy_left" ] = controls[ "にこり" ];
+							controls[ "eyebrow_happy_right" ] = controls[ "にこり" ];
+							// standardlist[ "eyebrow_happy_left" ] = controls[ "にこり" ];
+							// standardlist[ "eyebrow_happy_right" ] = controls[ "にこり" ];
+							break;
+						case "上":
+							controls[ "eyebrow_raised_left" ] = controls[ "上" ];
+							controls[ "eyebrow_raised_right" ] = controls[ "上" ];
+							// standardlist[ "eyebrow_raised_left" ] = controls[ "上" ];
+							// standardlist[ "eyebrow_raised_right" ] = controls[ "上" ];
+							break;
+						case "困る":
+							controls[ "eyebrow_troubled_left" ] = controls[ "困る" ];
+							controls[ "eyebrow_troubled_right" ] = controls[ "困る" ];
+							// standardlist[ "eyebrow_troubled_left" ] = controls[ "困る" ];
+							// standardlist[ "eyebrow_troubled_right" ] = controls[ "困る" ];
+							break;
+						case "怒り":
+							controls[ "eyebrow_angry_left" ] = controls[ "怒り" ];
+							controls[ "eyebrow_angry_right" ] = controls[ "怒り" ];
+							// standardlist[ "eyebrow_angry_left" ] = controls[ "怒り" ];
+							// standardlist[ "eyebrow_angry_right" ] = controls[ "怒り" ];
+							break;
+						// case "上歯上げ":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						// case "下歯上げ":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						// case "下歯さげ":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						// case "歯なし":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						case "瞳小":
+							controls[ "iris_small_left" ] = controls[ "瞳小" ];
+							controls[ "iris_small_right" ] = controls[ "瞳小" ];
+							// standardlist[ "iris_small_left" ] = controls[ "瞳小" ];
+							// standardlist[ "iris_small_right" ] = controls[ "瞳小" ];
+							break;
+						// case "こっちみんな":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						// case "口小":
+						// 	controls[ "" ] = controls[ "" ];
+						// 	break;
+						default:
+							break;
+					}
+				}
+			}
+
+			function animate() {
+				requestAnimationFrame( animate );
+				render();
+			}
+
+			function render() {
+				effect.render( scene, camera );
+			}
+
+		</script>
+
+	</body>
+</html>
