@@ -322,7 +322,7 @@
 			}
 
 			// Update GUI
-			function updateGUI() {
+			function updateGUI( mesh ) {
 				gui.removeFolder(morphs)
 				morphs = gui.addFolder( 'Morphs' );
 				gui2.removeFolder(stdlist)
@@ -413,8 +413,8 @@
 					mesh = object;
 					mesh.position.y = - 10;
 					scene.add(mesh);
+					updateGUI(mesh);
 				}, onProgress, null);
-				updateGUI();
 			}
 
 			// progresser
